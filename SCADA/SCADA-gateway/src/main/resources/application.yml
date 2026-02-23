@@ -1,0 +1,92 @@
+spring:
+  application:
+    name: scada-gateway
+  docker:
+    compose:
+      enabled: false
+
+opcua:
+  servers:
+    - id: plc-simulator-001
+      name: "Siemens S7-1200 Simulator"
+      endpoint: "opc.tcp://100.78.57.135:4840"
+      security: "NONE"
+      enabled: true
+
+      tags:
+        - nodeId: "ns=2;i=3"           # Speed
+          name: "Motor Speed"
+          dataType: "INT"
+          pollingRate: 1000
+          enabled: true
+          unit: "rpm"
+
+        - nodeId: "ns=2;i=4"           # Current
+          name: "Motor Current"
+          dataType: "FLOAT"
+          pollingRate: 1000
+          enabled: true
+          unit: "A"
+
+        - nodeId: "ns=2;i=5"           # Temperature
+          name: "Motor Temperature"
+          dataType: "FLOAT"
+          pollingRate: 2000
+          enabled: true
+          unit: "°C"
+
+        - nodeId: "ns=2;i=6"           # Running
+          name: "Motor Running"
+          dataType: "BOOLEAN"
+          pollingRate: 1000
+          enabled: true
+
+        - nodeId: "ns=2;i=8"           # Pressure
+          name: "Pump Pressure"
+          dataType: "FLOAT"
+          pollingRate: 1000
+          enabled: true
+          unit: "bar"
+
+        - nodeId: "ns=2;i=9"           # Flow
+          name: "Pump Flow"
+          dataType: "FLOAT"
+          pollingRate: 1000
+          enabled: true
+          unit: "l/min"
+
+        - nodeId: "ns=2;i=10"          # Mode
+          name: "Pump Mode"
+          dataType: "INT"
+          pollingRate: 2000
+          enabled: true
+
+        - nodeId: "ns=2;i=12"          # Level
+          name: "Tank Level"
+          dataType: "FLOAT"
+          pollingRate: 1000
+          enabled: true
+          unit: "%"
+
+        - nodeId: "ns=2;i=13"          # InletValve
+          name: "Inlet Valve"
+          dataType: "BOOLEAN"
+          pollingRate: 2000
+          enabled: true
+
+        - nodeId: "ns=2;i=14"          # OutletValve
+          name: "Outlet Valve"
+          dataType: "BOOLEAN"
+          pollingRate: 2000
+          enabled: true
+
+logging:
+  level:
+    com.scada.gateway: DEBUG
+    org.eclipse.milo: INFO
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
