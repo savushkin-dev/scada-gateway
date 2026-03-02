@@ -1,0 +1,101 @@
+plc:
+  id: "S7-1200-SIM-001"
+  name: "Siemens S7-1200 Simulator"
+  endpoint: "opc.tcp://0.0.0.0:4840"
+  update_rate: 1.0  # секунд
+  
+  # Настройки симуляции
+  simulation:
+    enable_noise: true
+    noise_level: 0.02  # 2% шума
+    enable_drift: true  # имитация дрейфа датчиков
+    drift_rate: 0.001   # 0.1% в час
+    
+  # Data Blocks (как в реальном PLC)
+  data_blocks:
+    - db_number: 1
+      name: "MotorControl"
+      tags:
+        - name: "Speed"
+          address: "DB1.Speed"
+          type: "int"
+          initial: 1500
+          min: 0
+          max: 3000
+          unit: "rpm"
+          access: "RW"
+          
+        - name: "Current"
+          address: "DB1.Current"
+          type: "float"
+          initial: 12.5
+          min: 0
+          max: 100
+          unit: "A"
+          access: "RO"
+          
+        - name: "Temperature"
+          address: "DB1.Temperature"
+          type: "float"
+          initial: 45.0
+          min: 0
+          max: 150
+          unit: "°C"
+          access: "RO"
+          
+        - name: "Running"
+          address: "DB1.Running"
+          type: "bool"
+          initial: true
+          access: "RW"
+          
+    - db_number: 2
+      name: "PumpControl"
+      tags:
+        - name: "Pressure"
+          address: "DB2.Pressure"
+          type: "float"
+          initial: 2.5
+          min: 0
+          max: 10
+          unit: "bar"
+          access: "RO"
+          
+        - name: "Flow"
+          address: "DB2.Flow"
+          type: "float"
+          initial: 100.0
+          min: 0
+          max: 200
+          unit: "l/min"
+          access: "RO"
+          
+        - name: "Mode"
+          address: "DB2.Mode"
+          type: "byte"
+          initial: 1  # 1=Auto, 0=Manual
+          access: "RW"
+          
+    - db_number: 3
+      name: "TankControl"
+      tags:
+        - name: "Level"
+          address: "DB3.Level"
+          type: "float"
+          initial: 75.0
+          min: 0
+          max: 100
+          unit: "%"
+          access: "RO"
+          
+        - name: "InletValve"
+          address: "DB3.InletValve"
+          type: "bool"
+          initial: true
+          access: "RW"
+          
+        - name: "OutletValve"
+          address: "DB3.OutletValve"
+          type: "bool"
+          initial: false
+          access: "RW"
