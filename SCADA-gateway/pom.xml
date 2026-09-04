@@ -96,7 +96,7 @@
         <dependency>
             <groupId>com.ghgande</groupId>
             <artifactId>j2mod</artifactId>
-            <version>2.5.0</version>
+            <version>3.3.0</version>
         </dependency>
 
         <!-- LuaJ: чистый Lua на Java. Ответы PAC (протокол driver-master) приходят
