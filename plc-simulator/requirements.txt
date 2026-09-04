@@ -1,5 +1,5 @@
 # Зависимости симулятора PLC (включая replay архива BN1_MCA1)
 asyncua==1.1.8        # OPC UA сервер
-pymodbus==2.5.3       # Modbus TCP сервер (core/modbus_server.py написан под 2.x API)
+pymodbus==3.15.0       # Modbus TCP сервер (core/modbus_server.py написан под 2.x API)
 numpy>=1.24           # ряды значений архива в replay
 PyYAML==6.0.3         # чтение конфигов
