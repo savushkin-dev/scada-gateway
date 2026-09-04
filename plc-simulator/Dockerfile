@@ -5,7 +5,7 @@
 # Python 3.11: asyncua 1.1.8 / pymodbus 3.7.4 работают стабильно
 # (на 3.14 у asyncua-клиента баг issubclass — на 3.11 его нет).
 # ============================================================================
-FROM python:3.11-slim
+FROM python:3.14-slim
 WORKDIR /app
 
 COPY requirements.txt .
