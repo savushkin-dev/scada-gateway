@@ -3,7 +3,7 @@
 # Jar собирается на хосте (mvn -DskipTests package) — быстрее и надёжнее, чем
 # тяжёлая maven-сборка внутри контейнера. Собрать: ./up.sh или mvn package.
 # ============================================================================
-FROM eclipse-temurin:21-jre
+FROM eclipse-temurin:25-jre
 WORKDIR /app
 
 # curl — для HEALTHCHECK (опрос /actuator/health из docker-compose).
