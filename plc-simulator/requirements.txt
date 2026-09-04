@@ -1,5 +1,5 @@
 # Зависимости симулятора PLC (включая replay архива BN1_MCA1)
-asyncua==1.1.8        # OPC UA сервер
+asyncua==2.0.1        # OPC UA сервер
 pymodbus==3.7.4       # Modbus TCP сервер (core/modbus_server.py под 3.7.x API). НЕ повышать до 3.8+:
                       # в 3.8 датастор переименован (ModbusSlaveContext→ModbusDeviceContext), а в
                       # 3.15 полностью переписан — сломает modbus_server.py. См. ignore в dependabot.yml.
