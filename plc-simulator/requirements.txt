@@ -3,5 +3,5 @@ asyncua==1.1.8        # OPC UA сервер
 pymodbus==3.7.4       # Modbus TCP сервер (core/modbus_server.py под 3.7.x API). НЕ повышать до 3.8+:
                       # в 3.8 датастор переименован (ModbusSlaveContext→ModbusDeviceContext), а в
                       # 3.15 полностью переписан — сломает modbus_server.py. См. ignore в dependabot.yml.
-numpy>=1.24           # ряды значений архива в replay
+numpy>=2.5.2           # ряды значений архива в replay
 PyYAML==6.0.3         # чтение конфигов
