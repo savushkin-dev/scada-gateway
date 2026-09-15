@@ -305,6 +305,10 @@ class PLCSimulator:
         regs = self.modbus_server.read_registers(address, count)
         if not regs or len(regs) < count:
             return None
+        if address not in self._modbus_pushed:
+            return None                      # мы ещё ничего не клали в регистр — рано
+                                              # считать его бланковое содержимое записью
+                                              # оператора (симметрично _operator_touched)
         if regs == self._modbus_pushed.get(address):
             return None                      # в регистре ровно то, что положили мы
         try:

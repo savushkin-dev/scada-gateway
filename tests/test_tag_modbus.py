@@ -9,7 +9,12 @@
 без шума/дрейфа/аномалий (см. Tag.value) — на этом строятся все проверки ниже.
 """
 import struct
+from types import SimpleNamespace
 
+from pymodbus.datastore import ModbusServerContext, ModbusSlaveContext
+
+from core.modbus_server import ModbusServer
+from core.plc import PLCSimulator
 from core.tag import Tag
 
 
@@ -66,3 +71,40 @@ def test_bool_true_false():
 def test_no_address_returns_none():
     tag = Tag({"name": "opc_only", "type": "float", "protocol": "opcua", "generator": "replay"})
     assert tag.get_modbus_registers() is None
+
+
+def make_simulator_stub():
+    """Мини-заглушка PLCSimulator: настоящий ModbusServer с готовым датастором,
+    но БЕЗ поднятия TCP-сервера (context выставлен напрямую, минуя .start()) +
+    пустой _modbus_pushed — состояние "мы ещё ничего в регистр не клали"."""
+    server = ModbusServer()
+    server.context = ModbusServerContext(slaves=ModbusSlaveContext(zero_mode=True), single=True)
+    # _modbus_operator_write вызывает self._modbus_decode — на namespace-заглушке
+    # это нужно привязать явно, иначе AttributeError молча проглотится в except.
+    return SimpleNamespace(modbus_server=server, _modbus_pushed={},
+                            _modbus_decode=PLCSimulator._modbus_decode)
+
+
+def test_operator_write_ignores_blank_register_on_first_tick():
+    # Регрессия: до фикса пустой регистр (0 у pymodbus по умолчанию) на первом
+    # тике читался как "оператор уже записал 0" и тег с generator=replay навсегда
+    # застывал на нуле, хотя архив реально давал другое значение. Раскрылось при
+    # включении генерации на всех Modbus-тегах (tools/enable_replay.py, 14.09.2026).
+    sim = make_simulator_stub()
+    written = PLCSimulator._modbus_operator_write(sim, tag=None, address=5, modbus_type="float32")
+    assert written is None
+
+
+def test_operator_write_detects_real_write_after_first_push():
+    sim = make_simulator_stub()
+    # Симулируем то, что делает update_modbus_tags: сами кладём значение реплея...
+    regs = PLCSimulator._modbus_encode(2.5, "float32")
+    sim.modbus_server.context[0].setValues(3, 5, regs)
+    sim._modbus_pushed[5] = regs
+    # ...без изменений в регистре — это не запись оператора.
+    assert PLCSimulator._modbus_operator_write(sim, tag=None, address=5, modbus_type="float32") is None
+    # А теперь кто-то (шлюз) реально переписал регистр другим значением.
+    other_regs = PLCSimulator._modbus_encode(9.0, "float32")
+    sim.modbus_server.context[0].setValues(3, 5, other_regs)
+    result = PLCSimulator._modbus_operator_write(sim, tag=None, address=5, modbus_type="float32")
+    assert result == 9.0
