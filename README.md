@@ -61,13 +61,16 @@ curl -s http://localhost:8888/actuator/health          # {"status":"UP"}
 
 - **Три протокола одновременно** — OPC UA (типизированные узлы), Modbus TCP (float32 LE / int16)
   и PAC (`driver-master`, Savushkin/ptusa: TCP + zlib(Lua), опрос через LuaJ).
-- **Привязка к базе каналов** — 2471 канал из `channel_dump.sql`, `tagId = node.id`.
+- **Привязка к базе каналов** — 2517 каналов из `channel_dump.sql`, `tagId = node.id`.
+- **Адекватные данные** — измерения идут из архива BN1_MCA1 по своей физической величине
+  (очищены от кодов обрыва датчика), уставки — наладочные константы по прошивке ptusa;
+  модель — `tools/build_data_model.py`, проверка по всему архиву — `tools/check_data_model.py`.
 - **Авто-переподключение** — супервизор (`@Scheduled`), детект «тихой» смерти сессии,
   токен поколения против flapping.
 - **Журнал и события** — `event_log` в БД + топики `scada-events` / `scada-alarms`.
 - **Алармы по уставкам** — edge-триггер, пороги из перцентилей p1/p99 архива, гистерезис.
-- **Команды оператора** — запись значения в OPC UA / Modbus / PAC-тег через `scada-commands`
-  (проверка writable: датчик RO не перезаписать).
+- **Команды оператора** — запись команд и уставок по OPC UA и PAC через `scada-commands`;
+  Modbus и показания датчиков — только чтение (`REJECTED_NOT_WRITABLE`).
 
 ## Структура
 

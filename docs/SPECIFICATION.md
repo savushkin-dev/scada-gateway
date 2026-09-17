@@ -141,7 +141,7 @@ flowchart TB
 | Алармы | `evaluateAlarms()` | Edge-триггер по `minValue`/`maxValue`, гистерезис (deadband 2 %), severity MINOR/MAJOR/CRITICAL. |
 | Журнал | `EventLogService` | Пишет в `event_log`: соединения, смена качества, алармы, системные события. |
 | Продюсеры | `TelemetryProducer`, `AlarmProducer`, `EventProducer` | Сериализация DTO и отправка в топики Kafka. |
-| Команды | `writeTag()` | Запись значения в OPC UA / Modbus / PAC-тег по команде оператора (writable-проверка: датчик RO не перезаписать), ответ в `scada-command-results`. |
+| Команды | `writeTag()` | Запись команды или уставки по OPC UA / PAC по команде оператора (Modbus — только чтение; writable-проверка: датчик RO не перезаписать), ответ в `scada-command-results`. |
 
 ---
 
