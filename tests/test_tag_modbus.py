@@ -89,7 +89,7 @@ def test_operator_write_ignores_blank_register_on_first_tick():
     # Регрессия: до фикса пустой регистр (0 у pymodbus по умолчанию) на первом
     # тике читался как "оператор уже записал 0" и тег с generator=replay навсегда
     # застывал на нуле, хотя архив реально давал другое значение. Раскрылось при
-    # включении генерации на всех Modbus-тегах (tools/enable_replay.py, 14.09.2026).
+    # включении генерации на Modbus-тегах (14.09.2026).
     sim = make_simulator_stub()
     written = PLCSimulator._modbus_operator_write(sim, tag=None, address=5, modbus_type="float32")
     assert written is None
