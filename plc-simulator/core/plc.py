@@ -341,8 +341,12 @@ class PLCSimulator:
                     try:
                         # Сначала обратное чтение: шлюз пишет команду прямо в датастор
                         # сервера, и без этой проверки мы затёрли бы её своим значением.
-                        # Для OPC UA то же самое делает ветка RW в update_loop.
-                        written = self._modbus_operator_write(tag, modbus_address, modbus_type)
+                        # Для OPC UA то же самое делает ветка RW в update_loop. Регистр
+                        # RO-тега (показание датчика) чужую запись не принимает — на
+                        # следующем цикле в нём снова значение прибора.
+                        is_rw = getattr(getattr(tag, 'access', None), 'value', None) == "RW"
+                        written = (self._modbus_operator_write(tag, modbus_address, modbus_type)
+                                   if is_rw else None)
                         if written is not None:
                             tag.value = written
                             tag._operator_override = True
@@ -440,7 +444,7 @@ class PLCSimulator:
         """Подставить в теги текущие значения из архива (replay)."""
         if not self.replay:
             return
-        offset = self.replay.current_offset()
+        elapsed = self.replay.current_elapsed()
         for db in self.data_blocks.values():
             for tag in db.get_all_tags():
                 if getattr(tag, 'generator', None) != "replay":
@@ -451,21 +455,8 @@ class PLCSimulator:
                 # уставка жила бы до ближайшего цикла реплея.
                 if getattr(tag, '_operator_override', False):
                     continue
-                # Данные берём по replay_source (может быть общим для нескольких
-                # тегов), а не по address — так один архивный сигнал дублируется
-                # на много каналов, при этом каждый тег остаётся уникальным узлом.
-                src = getattr(tag, 'replay_source', tag.address)
-                if not self.replay.has(src):
-                    continue
-                # Одна архивная серия достаётся многим каналам, и без сдвига они
-                # меняются синхронно — на мнемосхеме это сразу видно как подделка.
-                # Индивидуальный сдвиг разводит их по времени внутри той же записи.
-                shift = getattr(tag, 'replay_offset', 0) or 0
-                pos = offset + shift
-                if self.replay.duration > 0:
-                    pos %= self.replay.duration
-                value = self.replay.value_at(src, pos)
-                tag.set_replay_value(value)
+                # Серия, фильтр кодов обрыва, масштаб, интеграл/возраст — в ReplaySpec.
+                tag.set_replay_value(self.replay.evaluate(tag.replay_spec, elapsed))
 
     async def update_loop(self):
         """Цикл обновления значений"""
