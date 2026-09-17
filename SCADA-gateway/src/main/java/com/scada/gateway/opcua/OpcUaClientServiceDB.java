@@ -630,7 +630,7 @@ public class OpcUaClientServiceDB implements TagCatalog, OpcUaClientRegistry {
 
     // --- Порты для CommandService (DIP): god-класс — владелец живых карт (кэш тегов,
     // OPC UA-клиенты), поэтому отдаёт их только на ЧТЕНИЕ. Сама логика записи
-    // (writeTag/writeOpcUa/writeModbus) переехала в com.scada.gateway.command.CommandService.
+    // (writeTag/writeOpcUa/writePac) переехала в com.scada.gateway.command.CommandService.
     @Override
     public TagEntity byId(Long id) {
         return id == null ? null : tagCache.get(id);

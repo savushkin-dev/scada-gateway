@@ -195,8 +195,8 @@ public class ConfigurationService {
 
         // Проставляем тегам ЗАГРУЖЕННЫЙ контроллер из controllerCache вместо ленивого
         // прокси (findByEnabledTrue его не подгружает). Иначе доступ к полям контроллера
-        // (endpoint) ВНЕ этой @Transactional-сессии — напр. в CommandService.writeModbus/
-        // writePac — падает LazyInitializationException. getId() на прокси безопасен.
+        // (endpoint) ВНЕ этой @Transactional-сессии — напр. в CommandService.writePac —
+        // падает LazyInitializationException. getId() на прокси безопасен.
         for (TagEntity t : tags) {
             ControllerEntity ctrl = t.getController();
             if (ctrl != null) {

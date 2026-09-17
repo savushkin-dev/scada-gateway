@@ -13,6 +13,8 @@ import math
 import logging
 from enum import Enum
 
+from .archive_replay import ReplaySpec
+
 logger = logging.getLogger(__name__)
 
 class AccessType(Enum):
@@ -46,10 +48,11 @@ class Tag:
         # Источник данных архива (replay). По умолчанию = address, но может
         # отличаться: несколько тегов могут проигрывать ОДНУ серию архива
         # (дублирование данных), сохраняя при этом свой уникальный address/nodeId.
-        self.replay_source = config.get('replay_source', self.address)
-        # Сдвиг точки воспроизведения внутри архива, секунды. Разводит каналы,
-        # сидящие на одной серии, чтобы они не менялись синхронно.
-        self.replay_offset = float(config.get('replay_offset', 0) or 0)
+        # Как именно серия превращается в значение канала (фильтр кодов обрыва,
+        # масштаб, интеграл, возраст операции) — см. core/archive_replay.ReplaySpec.
+        self.replay_spec = ReplaySpec.from_config(config, self.address)
+        self.replay_source = self.replay_spec.source
+        self.replay_offset = self.replay_spec.offset
         # Объектная модель прибора (как настоящий ПЛК): устройство + поле.
         # OPC UA-узлы группируются в object-node на прибор с переменными-полями.
         self.device = config.get('device')       # напр. "LINE1V0"

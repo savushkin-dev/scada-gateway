@@ -1,7 +1,5 @@
 package com.scada.gateway.command;
 
-import com.scada.gateway.modbus.ModbusClientService;
-import com.scada.gateway.modbus.ModbusEndpoint;
 import com.scada.gateway.pac.PacClientService;
 import com.scada.gateway.pac.PacEndpoint;
 import com.scada.gateway.model.TagProtocols;
@@ -23,7 +21,8 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Команды записи в ПЛК (OPC UA / Modbus / PAC) от Monitor Srv.
+ * Команды записи в ПЛК от Monitor Srv. Пишем только по OPC UA и PAC: Modbus-контроллер
+ * (WAGO) отдаёт показания и только на чтение.
  *
  * <p>Выделено из god-класса OpcUaClientServiceDB (шаг 2d декомпозиции). Живыми картами
  * (кэш тегов, OPC UA-клиенты) по-прежнему владеет god-класс — сюда они приходят через
@@ -38,20 +37,17 @@ public class CommandService {
 
     private final TagCatalog tagCatalog;
     private final OpcUaClientRegistry opcUaClients;
-    private final ModbusClientService modbus;
     private final PacClientService pac;
     private final EventLogService eventLog;
     private final long opcuaOpTimeoutMs;
 
     public CommandService(TagCatalog tagCatalog,
                           OpcUaClientRegistry opcUaClients,
-                          ModbusClientService modbus,
                           PacClientService pac,
                           EventLogService eventLog,
                           @Value("${gateway.opcua-op-timeout-ms:5000}") long opcuaOpTimeoutMs) {
         this.tagCatalog = tagCatalog;
         this.opcUaClients = opcUaClients;
-        this.modbus = modbus;
         this.pac = pac;
         this.eventLog = eventLog;
         this.opcuaOpTimeoutMs = opcuaOpTimeoutMs;
@@ -66,22 +62,23 @@ public class CommandService {
         if (tag == null) {
             return new CommandOutcome(false, CommandStatus.REJECTED_UNKNOWN_TAG, "Тег не найден: " + tagId, null);
         }
+        // Modbus-контроллер только на чтение — по протоколу, а не по флагу: у holding-
+        // регистра нет признака «только чтение», и ошибка в конфиге (writable: true)
+        // молча перезаписала бы регистр прибора.
+        if (TagProtocols.isModbusTag(tag)) {
+            return new CommandOutcome(false, CommandStatus.REJECTED_NOT_WRITABLE,
+                    "Modbus-контроллер только на чтение, запись запрещена: " + tag.getName(), null);
+        }
         // Доступ к записи — как у реального ПЛК: показание датчика (давление, расход)
-        // изменить нельзя, только команду актуатора (клапан/мотор/DO). Отклоняем ДО
-        // похода в контроллер: для OPC UA это экономит round-trip до Bad_NotWritable,
-        // для Modbus — ЕДИНСТВЕННАЯ защита (у holding-регистра нет признака «только
-        // чтение», без этой проверки регистр датчика молча перезапишется).
+        // изменить нельзя, только команду или уставку. Отклоняем ДО похода в контроллер:
+        // это экономит round-trip до Bad_NotWritable.
         if (!tag.isWritable()) {
             return new CommandOutcome(false, CommandStatus.REJECTED_NOT_WRITABLE,
                     "Тег только для чтения (датчик), запись запрещена: " + tag.getName(), null);
         }
         // Маршрутизация по протоколу — деталь реализации шлюза, наружу не торчит (A6).
-        // Запись реализована для OPC UA, Modbus и PAC; иной протокол → PROTOCOL_UNSUPPORTED.
         if (TagProtocols.isOpcUaTag(tag)) {
             return writeOpcUa(tag, value, dataType);
-        }
-        if (TagProtocols.isModbusTag(tag)) {
-            return writeModbus(tag, value, dataType);
         }
         if (TagProtocols.isPacTag(tag)) {
             return writePac(tag, value, dataType);
@@ -148,57 +145,6 @@ public class CommandService {
             eventLog.logError("OpcUaClient", "Ошибка записи тега " + tag.getName(), e, tag, null);
             return new CommandOutcome(false, CommandStatus.FAILED_WRITE, "Ошибка записи: " + e.getMessage(), null);
         }
-    }
-
-    /**
-     * A6: запись по Modbus. Симметрична чтению (holding-регистры, адрес −40001,
-     * FLOAT little-endian по словам). BOOLEAN/INT → один регистр (FC06),
-     * FLOAT → два регистра (FC16). У Modbus нет понятия sourceTime и «not writable»
-     * на уровне узла, поэтому исходы грубее OPC UA: TYPE_MISMATCH / NO_CONNECTION /
-     * WRITE.
-     */
-    private CommandOutcome writeModbus(TagEntity tag, Object value, String dataType) {
-        ControllerEntity ctrl = tag.getController();
-        if (ctrl == null || ctrl.getEndpoint() == null) {
-            return new CommandOutcome(false, CommandStatus.FAILED_NO_CONNECTION, "Контроллер не задан", null);
-        }
-        if (tag.getModbusAddress() == null) {
-            return new CommandOutcome(false, CommandStatus.REJECTED_UNKNOWN_TAG, "У тега нет Modbus-адреса", null);
-        }
-        String host = ModbusEndpoint.host(ctrl.getEndpoint());
-        int port = ModbusEndpoint.port(ctrl.getEndpoint(), 502);
-        int addr = tag.getModbusAddress();
-        int unitId = tag.getModbusUnitId();
-        String dt = dataType != null ? dataType : tag.getDataType();
-
-        try {
-            if (ValueCodec.isFloat(dt)) {
-                modbus.writeFloat(host, port, addr, unitId, ValueCodec.toFloat(value));
-            } else if (ValueCodec.isInt(dt)) {
-                modbus.writeRegister(host, port, addr, unitId, ValueCodec.toInt(value) & 0xFFFF);
-            } else if (ValueCodec.isBool(dt)) {
-                modbus.writeRegister(host, port, addr, unitId, ValueCodec.toBool(value) ? 1 : 0);
-            } else {
-                return new CommandOutcome(false, CommandStatus.REJECTED_TYPE_MISMATCH,
-                        "Неизвестный тип Modbus-тега: " + dt, null);
-            }
-        } catch (NumberFormatException | ClassCastException e) {
-            return new CommandOutcome(false, CommandStatus.REJECTED_TYPE_MISMATCH,
-                    "Значение не приводится к типу тега: " + e.getMessage(), null);
-        } catch (java.io.IOException e) {
-            return new CommandOutcome(false, CommandStatus.FAILED_NO_CONNECTION,
-                    "Нет связи с контроллером: " + e.getMessage(), null);
-        } catch (Exception e) {
-            log.error("Ошибка записи Modbus-тега {}: {}", tag.getName(), e.getMessage());
-            eventLog.logError("ModbusClient", "Ошибка записи тега " + tag.getName(), e, tag, null);
-            return new CommandOutcome(false, CommandStatus.FAILED_WRITE, "Ошибка записи Modbus: " + e.getMessage(), null);
-        }
-
-        log.info("✍ Modbus записано {} = {} (addr {})", tag.getName(), value, addr);
-        eventLog.logEvent("COMMAND_APPLIED", "ModbusClient", "INFO",
-                String.format("Записано %s = %s", tag.getName(), value),
-                Map.of("tagName", tag.getName(), "value", String.valueOf(value)));
-        return new CommandOutcome(true, CommandStatus.APPLIED, "Записано значение " + value, value);
     }
 
     /**
