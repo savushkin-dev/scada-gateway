@@ -1,6 +1,5 @@
 package com.scada.gateway.command;
 
-import com.scada.gateway.modbus.ModbusClientService;
 import com.scada.gateway.pac.PacClientService;
 import com.scada.gateway.model.entity.ControllerEntity;
 import com.scada.gateway.model.entity.TagEntity;
@@ -17,7 +16,7 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /**
- * Тесты сервиса команд на МОКАХ портов (TagCatalog, OpcUaClientRegistry) и Modbus.
+ * Тесты сервиса команд на МОКАХ портов (TagCatalog, OpcUaClientRegistry) и PAC.
  *
  * <p>Смысл декомпозиции 2d виден именно здесь: живые карты god-класса подменены
  * заглушками (Mockito), поэтому логику маршрутизации и исходов команды можно
@@ -33,7 +32,6 @@ class CommandServiceTest {
 
     @Mock TagCatalog tagCatalog;
     @Mock OpcUaClientRegistry opcUaClients;
-    @Mock ModbusClientService modbus;
     @Mock PacClientService pac;
     @Mock EventLogService eventLog;
 
@@ -41,7 +39,7 @@ class CommandServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new CommandService(tagCatalog, opcUaClients, modbus, pac, eventLog, 5000L);
+        service = new CommandService(tagCatalog, opcUaClients, pac, eventLog, 5000L);
     }
 
     private static TagEntity writableModbusTag() {
@@ -83,12 +81,12 @@ class CommandServiceTest {
     @Test
     @DisplayName("Датчик (writable=false) → REJECTED_NOT_WRITABLE, БЕЗ похода в контроллер")
     void not_writable_rejected_before_io() {
-        TagEntity t = writableModbusTag();
+        TagEntity t = writableOpcUaTag(7L);
         t.setWritable(false);
         when(tagCatalog.byId(1L)).thenReturn(t);
-        CommandOutcome out = service.writeTag(1L, 5, "INT");
+        CommandOutcome out = service.writeTag(1L, true, "BOOL");
         assertEquals(CommandStatus.REJECTED_NOT_WRITABLE, out.status);
-        verifyNoInteractions(modbus);   // защита сработала ДО записи
+        verifyNoInteractions(opcUaClients);   // защита сработала ДО записи
     }
 
     @Test
@@ -101,23 +99,13 @@ class CommandServiceTest {
     }
 
     @Test
-    @DisplayName("Modbus-запись INT → writeRegister(host,port,addr,unit,value)")
-    void modbus_success_writes_register() throws Exception {
+    @DisplayName("Modbus-тег → REJECTED_NOT_WRITABLE даже при writable=true: пишем только по OPC UA и PAC")
+    void modbus_is_read_only_regardless_of_flag() {
         when(tagCatalog.byId(1L)).thenReturn(writableModbusTag());
         CommandOutcome out = service.writeTag(1L, 7, "INT");
-        assertTrue(out.success);
-        assertEquals(CommandStatus.APPLIED, out.status);
-        verify(modbus).writeRegister("wago", 5020, 40001, 1, 7);
-    }
-
-    @Test
-    @DisplayName("Modbus IOException → FAILED_NO_CONNECTION")
-    void modbus_io_error_is_no_connection() throws Exception {
-        when(tagCatalog.byId(1L)).thenReturn(writableModbusTag());
-        doThrow(new java.io.IOException("нет связи"))
-                .when(modbus).writeRegister(anyString(), anyInt(), anyInt(), anyInt(), anyInt());
-        CommandOutcome out = service.writeTag(1L, 7, "INT");
-        assertEquals(CommandStatus.FAILED_NO_CONNECTION, out.status);
+        assertFalse(out.success);
+        assertEquals(CommandStatus.REJECTED_NOT_WRITABLE, out.status);
+        verifyNoInteractions(opcUaClients, pac, eventLog);
     }
 
     @Test
