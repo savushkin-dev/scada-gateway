@@ -11,6 +11,23 @@ import static org.junit.jupiter.api.Assertions.*;
 class PacProtocolTest {
 
     @Test
+    void zlibBombIsRejected() throws Exception {
+        // 32 МБ нулей сжимаются в десятки КБ — кадр PAC (≤ 64 КБ) распаковался бы в десятки МБ.
+        java.util.zip.Deflater d = new java.util.zip.Deflater();
+        d.setInput(new byte[32 * 1024 * 1024]);
+        d.finish();
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        byte[] buf = new byte[65536];
+        while (!d.finished()) out.write(buf, 0, d.deflate(buf));
+        d.end();
+        byte[] bomb = out.toByteArray();
+        assertTrue(bomb.length < 65535, "бомба помещается в один кадр: " + bomb.length + " Б");
+        java.util.zip.DataFormatException e = assertThrows(java.util.zip.DataFormatException.class,
+                () -> PacProtocol.inflate(bomb, 0, bomb.length));
+        assertTrue(e.getMessage().contains("МБ"), e.getMessage());
+    }
+
+    @Test
     void buildRequest_headerLayout() {
         byte[] payload = {(byte) PacProtocol.CMD_GET_DEVICES_STATES};
         byte[] f = PacProtocol.buildRequest(7, payload);

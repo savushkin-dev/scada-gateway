@@ -73,13 +73,60 @@ class PacConnectionTest {
         }
     }
 
+    @Test
+    // Регрессия (нет лимита времени) — зависший тест; SEPARATE_THREAD превращает её в падение.
+    @org.junit.jupiter.api.Timeout(value = 15, threadMode = org.junit.jupiter.api.Timeout.ThreadMode.SEPARATE_THREAD)
+    void endlessSnapshotFailsFastInsteadOfHangingThePoller() throws Exception {
+        pac = new FakePac(true, "while true do end");
+        PacConnection conn = new PacConnection("127.0.0.1", pac.port(), 2000);
+        try {
+            conn.connect();
+            long t0 = System.nanoTime();
+            assertThrows(org.luaj.vm2.LuaError.class, conn::pollStates);
+            long ms = (System.nanoTime() - t0) / 1_000_000;
+            assertTrue(ms < 5000, "враждебный снимок оборван за " + ms + " мс, а не висит: поток опроса свободен");
+        } finally {
+            conn.close();
+        }
+    }
+
+    @Test
+    // Регрессия (нет лимита времени) — зависший тест; SEPARATE_THREAD превращает её в падение.
+    @org.junit.jupiter.api.Timeout(value = 15, threadMode = org.junit.jupiter.api.Timeout.ThreadMode.SEPARATE_THREAD)
+    void pacClientTurnsHostileSnapshotIntoBadReadings() throws Exception {
+        pac = new FakePac(true, "s = string.rep('x', 64 * 1024 * 1024)");
+        com.scada.gateway.pac.PacClientService service = new com.scada.gateway.pac.PacClientService();
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "pacTimeoutMs", 2000);
+        com.scada.gateway.model.entity.TagEntity tag = new com.scada.gateway.model.entity.TagEntity();
+        tag.setName("A.LINE1V0.ST");
+        tag.setDeviceName("LINE1V0");
+        tag.setFieldName("ST");
+        tag.setDataType("INT32");
+
+        long t0 = System.nanoTime();
+        var readings = service.read("127.0.0.1", pac.port(), java.util.List.of(tag));
+        long ms = (System.nanoTime() - t0) / 1_000_000;
+
+        assertEquals(1, readings.size());
+        assertNull(readings.get(0).value(), "значение канала — BAD (null), а не необработанное исключение");
+        assertTrue(ms < 5000, "за " + ms + " мс");
+    }
+
     /** Однопоточный фейковый PAC: одно соединение, кадры driver-master как у ptusa. */
     private static final class FakePac implements AutoCloseable {
         private final ServerSocket server = new ServerSocket(0, 1, InetAddress.getLoopbackAddress());
         private final List<String> commands = new CopyOnWriteArrayList<>();
         private final Thread thread;
 
+        /** Вместо снимка — этот Lua-текст (враждебный контроллер); null — обычный снимок. */
+        private final String hostileStates;
+
         FakePac(boolean banner) throws IOException {
+            this(banner, null);
+        }
+
+        FakePac(boolean banner, String hostileStates) throws IOException {
+            this.hostileStates = hostileStates;
             thread = new Thread(() -> serve(banner), "fake-pac");
             thread.setDaemon(true);
             thread.start();
@@ -113,7 +160,7 @@ class PacConnectionTest {
             int cmd = payload[0] & 0xFF;
             byte[] body = switch (cmd) {
                 case PacProtocol.CMD_GET_INFO_ON_CONNECT -> INFO.getBytes(StandardCharsets.UTF_8);
-                case PacProtocol.CMD_GET_DEVICES_STATES -> withRequestId(STATES);
+                case PacProtocol.CMD_GET_DEVICES_STATES -> withRequestId(hostileStates != null ? hostileStates : STATES);
                 case PacProtocol.CMD_EXEC_DEVICE_COMMAND -> {
                     String lua = new String(payload, 1, payload.length - 1, StandardCharsets.UTF_8);
                     commands.add(lua);

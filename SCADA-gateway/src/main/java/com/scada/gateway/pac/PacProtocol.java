@@ -63,6 +63,9 @@ public final class PacProtocol {
         return frame;
     }
 
+    /** Потолок распакованного ответа. Снимок станции (2647 каналов) — ~20 КБ; запас на порядки. */
+    public static final int MAX_INFLATED_BYTES = 8 * 1024 * 1024;
+
     /**
      * zlib-распаковка тела ответа. C++-драйвер жмёт тело zlib ({@code compress2}) и
      * распаковывает {@code uncompress} — это стандартный zlib-формат, который читает
@@ -80,6 +83,12 @@ public final class PacProtocol {
                     break;   // данных больше нет — выходим (защита от бесконечного цикла)
                 }
                 out.write(buf, 0, n);
+                // zlib-бомба: кадр ≤ 64 КБ распаковывается в десятки МБ (степень сжатия до ~1000:1)
+                // ещё до исполнения Lua. Настоящий снимок станции — десятки КБ.
+                if (out.size() > MAX_INFLATED_BYTES) {
+                    throw new DataFormatException("ответ PAC после распаковки больше "
+                            + MAX_INFLATED_BYTES / (1024 * 1024) + " МБ");
+                }
             }
         } finally {
             inflater.end();

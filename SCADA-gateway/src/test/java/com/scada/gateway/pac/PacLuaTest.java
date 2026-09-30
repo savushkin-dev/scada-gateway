@@ -2,6 +2,7 @@ package com.scada.gateway.pac;
 
 import org.junit.jupiter.api.Test;
 import org.luaj.vm2.Globals;
+import org.luaj.vm2.LuaError;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -87,12 +88,55 @@ class PacLuaTest {
     @Test
     void stateHasNoHostAccess() {
         Globals g = PacLua.newState();
-        for (String lib : new String[]{"os", "io", "luajava", "require", "package", "dofile", "loadfile"}) {
+        for (String lib : new String[]{"os", "io", "luajava", "require", "package", "dofile", "loadfile",
+                "debug", "load", "loadstring", "pcall", "xpcall", "collectgarbage", "getfenv", "setfenv"}) {
             assertTrue(g.get(lib).isnil(), lib + " не должен быть доступен скрипту контроллера");
         }
+        assertTrue(g.get("string").get("dump").isnil(), "string.dump — сборка байткода");
         // Вычисления, которые нужны снимку, остаются.
         PacLua.exec(g, "t = t or {}\nt.X = {V = math.max(1, 2), S = string.upper('ok')}\n");
         assertEquals(2.0, (Double) PacLua.read(g, "X", "V", "FLOAT"), 1e-9);
+    }
+
+    @Test
+    void bytecodeCannotBeLoaded() {
+        Globals g = PacLua.newState();
+        // Байткод Lua не проверяется: собранный скриптом (string.dump → loadstring) — выход из песочницы.
+        assertThrows(LuaError.class, () -> PacLua.exec(g, "f = loadstring(string.dump(function() return 42 end))"));
+        assertThrows(LuaError.class, () -> PacLua.exec(g, "s = string.dump(print)"));
+    }
+
+    @Test
+    // Регрессия (нет лимита времени) — зависший тест; SEPARATE_THREAD превращает её в падение.
+    @org.junit.jupiter.api.Timeout(value = 15, threadMode = org.junit.jupiter.api.Timeout.ThreadMode.SEPARATE_THREAD)
+    void endlessScriptIsStoppedByTimeBudget() {
+        Globals g = PacLua.newState();
+        long t0 = System.nanoTime();
+        LuaError e = assertThrows(LuaError.class, () -> PacLua.exec(g, "while true do end", 200));
+        long ms = (System.nanoTime() - t0) / 1_000_000;
+        assertTrue(ms < 2000, "цикл оборван за " + ms + " мс");
+        assertTrue(e.getMessage().contains("дольше"), e.getMessage());
+        // Лимит — на каждый скрипт, а не на жизнь стейта: следующий ответ разбирается.
+        PacLua.exec(g, SNAPSHOT);
+        assertEquals(1L, PacLua.read(g, "LINE1V0", "ST", "INT32"));
+    }
+
+    @Test
+    // Регрессия (нет лимита времени) — зависший тест; SEPARATE_THREAD превращает её в падение.
+    @org.junit.jupiter.api.Timeout(value = 15, threadMode = org.junit.jupiter.api.Timeout.ThreadMode.SEPARATE_THREAD)
+    void timeoutCannotBeSwallowedByScript() {
+        Globals g = PacLua.newState();
+        // pcall убран; и Timeout — Error, а не ошибка Lua: даже через coroutine его не перехватить.
+        assertThrows(LuaError.class, () -> PacLua.exec(g,
+                "local co = coroutine.create(function() while true do end end)\n"
+                        + "coroutine.resume(co)\nwhile true do end", 200));
+    }
+
+    @Test
+    void stringBombIsRejected() {
+        Globals g = PacLua.newState();
+        LuaError e = assertThrows(LuaError.class, () -> PacLua.exec(g, "s = string.rep('x', 64 * 1024 * 1024)"));
+        assertTrue(e.getMessage().contains("string.rep"), e.getMessage());
     }
 
     @Test
