@@ -6,6 +6,7 @@ import com.scada.gateway.model.TagProtocols;
 import com.scada.gateway.model.entity.ControllerEntity;
 import com.scada.gateway.model.entity.TagEntity;
 import com.scada.gateway.opcua.ValueCodec;
+import com.scada.gateway.script.ValueScripts;
 import com.scada.gateway.service.EventLogService;
 import org.eclipse.milo.opcua.sdk.client.OpcUaClient;
 import org.eclipse.milo.opcua.stack.core.types.builtin.DataValue;
@@ -39,17 +40,20 @@ public class CommandService {
     private final OpcUaClientRegistry opcUaClients;
     private final PacClientService pac;
     private final EventLogService eventLog;
+    private final ValueScripts scripts;
     private final long opcuaOpTimeoutMs;
 
     public CommandService(TagCatalog tagCatalog,
                           OpcUaClientRegistry opcUaClients,
                           PacClientService pac,
                           EventLogService eventLog,
+                          ValueScripts scripts,
                           @Value("${gateway.opcua-op-timeout-ms:5000}") long opcuaOpTimeoutMs) {
         this.tagCatalog = tagCatalog;
         this.opcUaClients = opcUaClients;
         this.pac = pac;
         this.eventLog = eventLog;
+        this.scripts = scripts;
         this.opcuaOpTimeoutMs = opcuaOpTimeoutMs;
     }
 
@@ -76,12 +80,31 @@ public class CommandService {
             return new CommandOutcome(false, CommandStatus.REJECTED_NOT_WRITABLE,
                     "Тег только для чтения (датчик), запись запрещена: " + tag.getName(), null);
         }
-        // Маршрутизация по протоколу — деталь реализации шлюза, наружу не торчит (A6).
-        if (TagProtocols.isOpcUaTag(tag)) {
-            return writeOpcUa(tag, value, dataType);
+        // Пользовательский скрипт канала с write(): значение оператора (инженерные единицы)
+        // → значение для ПЛК. Упал — ошибка значения, в ПЛК ничего не уходит.
+        Object plcValue;
+        try {
+            plcValue = scripts.toPlc(tag, value);
+        } catch (ValueScripts.ScriptFailure e) {
+            return new CommandOutcome(false, CommandStatus.REJECTED_TYPE_MISMATCH,
+                    "Значение не преобразовано скриптом канала: " + e.getMessage(), null);
         }
-        if (TagProtocols.isPacTag(tag)) {
-            return writePac(tag, value, dataType);
+        // Маршрутизация по протоколу — деталь реализации шлюза, наружу не торчит (A6).
+        CommandOutcome outcome;
+        if (TagProtocols.isOpcUaTag(tag)) {
+            outcome = writeOpcUa(tag, plcValue, dataType);
+        } else if (TagProtocols.isPacTag(tag)) {
+            outcome = writePac(tag, plcValue, dataType);
+        } else {
+            outcome = null;
+        }
+        if (outcome != null) {
+            // Оператору — его значение; в ПЛК ушло пересчитанное скриптом.
+            if (outcome.success && plcValue != value) {
+                return new CommandOutcome(true, CommandStatus.APPLIED,
+                        "Записано значение " + value + " (в ПЛК: " + plcValue + ")", value);
+            }
+            return outcome;
         }
         String proto = tag.getProtocol() != null ? tag.getProtocol() : "неизвестный";
         return new CommandOutcome(false, CommandStatus.REJECTED_PROTOCOL_UNSUPPORTED,

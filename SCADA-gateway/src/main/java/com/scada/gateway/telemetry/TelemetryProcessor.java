@@ -8,6 +8,7 @@ import com.scada.gateway.model.entity.ControllerEntity;
 import com.scada.gateway.model.entity.TagEntity;
 import com.scada.gateway.model.entity.TelemetryEntity;
 import com.scada.gateway.repository.TelemetryRepository;
+import com.scada.gateway.script.ValueScripts;
 import com.scada.gateway.service.EventLogService;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -43,6 +44,8 @@ public class TelemetryProcessor {
     private final Counter telemetrySent;
     /** Горячий резерв: историю в БД пишет только активный (иначе пара писала бы каждую точку дважды). */
     private final Leadership leadership;
+    /** Пользовательские Lua-скрипты обработки значений (scripts/): до качества, алармов и Kafka. */
+    private final ValueScripts scripts;
 
     /** Считать ли пороги/алармы в шлюзе. По умолчанию false — алармы считает Monitor. */
     @Value("${gateway.alarms.enabled:false}")
@@ -65,12 +68,14 @@ public class TelemetryProcessor {
                               EventLogService eventLog,
                               AlarmEvaluator alarmEvaluator,
                               MeterRegistry meterRegistry,
-                              Leadership leadership) {
+                              Leadership leadership,
+                              ValueScripts scripts) {
         this.telemetryProducer = telemetryProducer;
         this.telemetryRepository = telemetryRepository;
         this.eventLog = eventLog;
         this.alarmEvaluator = alarmEvaluator;
         this.leadership = leadership;
+        this.scripts = scripts;
         this.telemetrySent = meterRegistry.counter("scada.telemetry.sent.total");
     }
 
@@ -128,6 +133,12 @@ public class TelemetryProcessor {
      * значения в Kafka. batch != null ⇔ persist-telemetry=true; flush делает вызывающий.
      */
     public void processTagValue(TagEntity tag, Object value, String quality, Instant timestamp, List<TelemetryEntity> batch) {
+        // Пользовательский скрипт канала (масштаб, отсев кода обрыва, фильтр) — первым: всё
+        // дальше (качество, алармы, история, Kafka) видит уже обработанное значение.
+        ValueScripts.Processed processed = scripts.process(tag, value, quality, timestamp);
+        value = processed.value();
+        quality = processed.quality();
+
         // Чтение тега НЕ логируем в event_log на каждый опрос. Значения идут в Kafka
         // (и, если включён persist-telemetry, в локальную БД батчем в конце цикла);
         // в журнал событий пишем только смену качества и ошибки.

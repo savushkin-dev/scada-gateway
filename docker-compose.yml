@@ -129,6 +129,9 @@ services:
       SPRING_DATASOURCE_PASSWORD: "scada_password"
       SPRING_KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
       SIM_HOST: "simulator"           # → opcua.servers[*].endpoint (OPC UA + Modbus)
+    # Пользовательские Lua-скрипты обработки значений: правки подхватываются без перезапуска.
+    volumes:
+      - ./SCADA-gateway/scripts:/app/scripts:ro
     ports:
       - "8888:8888"
     depends_on:

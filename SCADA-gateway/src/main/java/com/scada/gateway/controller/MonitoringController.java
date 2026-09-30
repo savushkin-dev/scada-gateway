@@ -2,6 +2,7 @@ package com.scada.gateway.controller;
 
 import com.scada.gateway.ha.LeaderElector;
 import com.scada.gateway.model.entity.EventLogEntity;
+import com.scada.gateway.script.LuaValueScripts;
 import com.scada.gateway.service.EventLogService;
 import org.springframework.web.bind.annotation.*;
 import java.util.HashMap;
@@ -18,10 +19,22 @@ public class MonitoringController {
 
     private final EventLogService eventLogService;
     private final LeaderElector leaderElector;
+    private final LuaValueScripts scripts;
 
-    public MonitoringController(EventLogService eventLogService, LeaderElector leaderElector) {
+    public MonitoringController(EventLogService eventLogService, LeaderElector leaderElector,
+                                LuaValueScripts scripts) {
         this.eventLogService = eventLogService;
         this.leaderElector = leaderElector;
+        this.scripts = scripts;
+    }
+
+    /**
+     * Пользовательские скрипты обработки значений. GET /api/scripts →
+     * {dir, bindings: [{script, tags, matchedTags, write, errors, lastError}], lastReloadError}.
+     */
+    @GetMapping("/scripts")
+    public Map<String, Object> scripts() {
+        return scripts.info();
     }
 
     /**

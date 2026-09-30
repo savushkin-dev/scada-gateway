@@ -38,6 +38,8 @@ services:
       GATEWAY_HA_INSTANCE_ID: "gateway-2"
       GATEWAY_HA_SESSION_TIMEOUT_MS: "2000"
       GATEWAY_HA_HEARTBEAT_INTERVAL_MS: "500"
+    volumes:
+      - ./SCADA-gateway/scripts:/app/scripts:ro
     ports:
       - "8889:8888"
     depends_on:

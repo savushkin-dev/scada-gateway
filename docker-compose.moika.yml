@@ -130,6 +130,8 @@ services:
       GATEWAY_SEND_BAD_FRAMES: "true"
     volumes:
       - ./config/stations/BN1_MCA1.yaml:/app/config/station.yaml:ro
+      # Пользовательские Lua-скрипты обработки значений: правки подхватываются без перезапуска.
+      - ./SCADA-gateway/scripts:/app/scripts:ro
     ports:
       - "8888:8888"
     depends_on:

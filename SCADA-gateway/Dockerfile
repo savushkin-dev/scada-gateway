@@ -18,6 +18,9 @@ RUN apt-get update \
 # (SCADA-gateway-0.0.1-SNAPSHOT.jar); берём любой *.jar, но НЕ *-sources/-javadoc.
 # --chown: jar принадлежит scada (читается непривилегированным процессом).
 COPY --chown=scada:scada target/SCADA-gateway-*.jar app.jar
+# Пользовательские Lua-скрипты (gateway.scripts.dir=scripts → /app/scripts). В образе — примеры
+# без привязок; на стенде папка монтируется томом, правки подхватываются без перезапуска.
+COPY --chown=scada:scada scripts ./scripts
 
 # HTTP/actuator шлюза
 EXPOSE 8888

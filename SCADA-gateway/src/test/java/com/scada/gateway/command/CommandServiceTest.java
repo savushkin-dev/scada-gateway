@@ -3,6 +3,7 @@ package com.scada.gateway.command;
 import com.scada.gateway.pac.PacClientService;
 import com.scada.gateway.model.entity.ControllerEntity;
 import com.scada.gateway.model.entity.TagEntity;
+import com.scada.gateway.script.ValueScripts;
 import com.scada.gateway.service.EventLogService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -39,7 +40,7 @@ class CommandServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new CommandService(tagCatalog, opcUaClients, pac, eventLog, 5000L);
+        service = new CommandService(tagCatalog, opcUaClients, pac, eventLog, ValueScripts.NONE, 5000L);
     }
 
     private static TagEntity writableModbusTag() {
@@ -161,6 +162,40 @@ class CommandServiceTest {
         when(tagCatalog.byId(1L)).thenReturn(t);
         CommandOutcome out = service.writeTag(1L, true, "BOOLEAN");
         assertEquals(CommandStatus.REJECTED_NOT_WRITABLE, out.status);
+        verifyNoInteractions(pac);
+    }
+
+    @Test
+    @DisplayName("Скрипт канала с write(): в ПЛК уходит пересчитанное, оператору — его значение")
+    void script_write_converts_operator_value() {
+        TagEntity t = writablePacTag();
+        t.setDataType("FLOAT");
+        when(tagCatalog.byId(1L)).thenReturn(t);
+        ValueScripts msToSeconds = new ValueScripts() {
+            @Override public Processed process(TagEntity tag, Object v, String q, java.time.Instant ts) { return new Processed(v, q); }
+            @Override public Object toPlc(TagEntity tag, Object v) { return ((Number) v).doubleValue() * 1000; }
+        };
+        CommandService scripted = new CommandService(tagCatalog, opcUaClients, pac, eventLog, msToSeconds, 5000L);
+        when(pac.write(anyString(), anyInt(), anyString(), anyString(), any())).thenReturn(true);
+
+        CommandOutcome out = scripted.writeTag(1L, 2.5, null);
+
+        verify(pac).write("sim", 10000, "1V1", "ST", 2500.0f);
+        assertEquals(CommandStatus.APPLIED, out.status);
+        assertEquals(2.5, out.appliedValue);
+    }
+
+    @Test
+    @DisplayName("Скрипт канала упал на write() → REJECTED_TYPE_MISMATCH, в ПЛК ничего не уходит")
+    void script_write_failure_rejects_command() {
+        when(tagCatalog.byId(1L)).thenReturn(writablePacTag());
+        ValueScripts broken = new ValueScripts() {
+            @Override public Processed process(TagEntity tag, Object v, String q, java.time.Instant ts) { return new Processed(v, q); }
+            @Override public Object toPlc(TagEntity tag, Object v) throws ScriptFailure { throw new ScriptFailure("деление на ноль"); }
+        };
+        CommandOutcome out = new CommandService(tagCatalog, opcUaClients, pac, eventLog, broken, 5000L)
+                .writeTag(1L, true, "BOOLEAN");
+        assertEquals(CommandStatus.REJECTED_TYPE_MISMATCH, out.status);
         verifyNoInteractions(pac);
     }
 }

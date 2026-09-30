@@ -89,6 +89,8 @@ services:
       PLC_HOST: "scada-opcua"
     volumes:
       - ${SCADA_GATEWAY_PATH}/config/stations/BN1_MCA1.yaml:/app/config/station.yaml:ro
+      # Пользовательские Lua-скрипты обработки значений: правки подхватываются без перезапуска.
+      - ${SCADA_GATEWAY_PATH}/SCADA-gateway/scripts:/app/scripts:ro
     ports:
       - "8888:8888"
     depends_on:

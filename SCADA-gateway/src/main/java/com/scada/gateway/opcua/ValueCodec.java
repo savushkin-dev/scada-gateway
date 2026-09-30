@@ -43,6 +43,11 @@ public final class ValueCodec {
         return is(dataType, "FLOAT") || is(dataType, "REAL") || is(dataType, "DOUBLE");
     }
 
+    /** Тег объявлен строковым: STRING. */
+    public static boolean isString(String dataType) {
+        return is(dataType, "STRING");
+    }
+
     /** Значение команды → OPC UA {@link Variant} нужного типа (по имени типа тега). */
     public static Variant toVariant(String dataType, Object value) {
         String dt = dataType == null ? "" : dataType.trim().toUpperCase();

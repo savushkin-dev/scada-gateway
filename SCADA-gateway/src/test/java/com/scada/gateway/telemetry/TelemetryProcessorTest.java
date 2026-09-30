@@ -6,6 +6,7 @@ import com.scada.gateway.kafka.producer.TelemetryProducer;
 import com.scada.gateway.model.entity.TagEntity;
 import com.scada.gateway.model.entity.TelemetryEntity;
 import com.scada.gateway.repository.TelemetryRepository;
+import com.scada.gateway.script.ValueScripts;
 import com.scada.gateway.service.EventLogService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
@@ -40,7 +41,7 @@ class TelemetryProcessorTest {
     @BeforeEach
     void setUp() {
         processor = new TelemetryProcessor(telemetryProducer, telemetryRepository, eventLog, alarmEvaluator,
-                new SimpleMeterRegistry(), Leadership.ALWAYS_ACTIVE);
+                new SimpleMeterRegistry(), Leadership.ALWAYS_ACTIVE, ValueScripts.NONE);
     }
 
     private static TagEntity tag() {
@@ -88,5 +89,25 @@ class TelemetryProcessorTest {
         batch.add(new TelemetryEntity());
         processor.flushTelemetry(batch);
         verify(telemetryRepository).saveAll(batch);
+    }
+
+    @Test
+    @DisplayName("Скрипт канала обрабатывает значение ДО Kafka: код обрыва → BAD, смена качества видна")
+    void script_runs_before_kafka_and_quality() {
+        ValueScripts sensorBreak = new ValueScripts() {
+            @Override public Processed process(TagEntity tag, Object v, String q, Instant ts) {
+                return v instanceof Number n && Math.abs(n.doubleValue()) > 1000 ? new Processed(null, "BAD") : new Processed(v, q);
+            }
+            @Override public Object toPlc(TagEntity tag, Object v) { return v; }
+        };
+        TelemetryProcessor scripted = new TelemetryProcessor(telemetryProducer, telemetryRepository, eventLog,
+                alarmEvaluator, new SimpleMeterRegistry(), Leadership.ALWAYS_ACTIVE, sensorBreak);
+
+        scripted.processTagValue(tag(), 21.5, "GOOD", Instant.now(), null);
+        scripted.processTagValue(tag(), 3276.7, "GOOD", Instant.now(), null);
+
+        verify(telemetryProducer).sendTelemetry(any(TagEntity.class), eq(21.5), eq("GOOD"), any(Instant.class));
+        verify(telemetryProducer, never()).sendTelemetry(any(TagEntity.class), eq(3276.7), anyString(), any(Instant.class));
+        verify(eventLog).logEvent(eq("QUALITY_CHANGE"), anyString(), anyString(), anyString(), anyMap());
     }
 }
